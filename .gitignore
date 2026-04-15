@@ -1,0 +1,10 @@
+/bin/
+/dist/
+
+/.cache/
+
+/rhsum
+/rhsum.exe
+
+.DS_Store
+Thumbs.db
