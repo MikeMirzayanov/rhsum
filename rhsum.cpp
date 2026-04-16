@@ -511,12 +511,15 @@ int main(int argc, char* argv[]) {
 
     // 4. Combine all hashes using polynomial composition
     u64 final_hash = 0;
+    u64 offset_power = 1;
     for (const auto& task : tasks) {
         if (task.meta_size > 0) {
-            final_hash += task.meta_hash * power(P, task.global_offset);
+            final_hash += task.meta_hash * offset_power;
+            offset_power *= power(P, task.meta_size);
         }
         if (task.data_size > 0) {
-            final_hash += task.data_hash * power(P, task.global_offset + task.meta_size);
+            final_hash += task.data_hash * offset_power;
+            offset_power *= power(P, task.data_size);
         }
     }
 
