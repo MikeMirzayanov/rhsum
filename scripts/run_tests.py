@@ -29,6 +29,14 @@ def main() -> int:
         if subprocess.run(["sh", "-lc", "command -v valgrind >/dev/null"]).returncode != 0:
             print("SKIP: valgrind is not installed")
             return 0
+        valgrind_bin = "rhsum-valgrind.exe" if os.name == "nt" else "rhsum-valgrind"
+        build_env = env.copy()
+        build_env["RHSUM_OUTPUT_NAME"] = valgrind_bin
+        build_env["RHSUM_OPT_FLAG"] = "-O2"
+        build_env["RHSUM_DEBUG_FLAG"] = "-g"
+        build_env["RHSUM_ARCH_FLAG"] = ""
+        subprocess.run([sys.executable, "scripts/build.py"], cwd=REPO_ROOT, check=True, env=build_env)
+        env["RHSUM_BIN"] = str(REPO_ROOT / valgrind_bin)
         env["RHSUM_WRAPPER"] = (
             "valgrind --quiet --tool=memcheck --leak-check=full "
             "--show-leak-kinds=all --errors-for-leak-kinds=all "
