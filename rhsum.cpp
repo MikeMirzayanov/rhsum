@@ -26,6 +26,7 @@ typedef int64_t i64;
 const u64 P = 1000000000000037ULL;
 const int K = 8;
 const u64 AUTO_THREAD_GRANULARITY = 256ULL * 1024 * 1024;
+const size_t STREAM_BUFFER_SIZE = 8ULL * 1024 * 1024;
 
 // --- Mathematical Functions ---
 
@@ -85,25 +86,6 @@ struct HashTask {
     u64 data_hash;
 };
 
-struct FileChunkWork {
-    size_t task_index;
-    vector<uint8_t> owned_data;
-    const uint8_t* data;
-    size_t length;
-    vector<u64> chunk_hashes;
-    vector<size_t> chunk_sizes;
-#if defined(__unix__) || defined(__APPLE__)
-    bool is_mapped;
-#endif
-};
-
-struct ChunkTask {
-    size_t file_index;
-    size_t chunk_index;
-    const uint8_t* data;
-    size_t size;
-};
-
 struct EntryInfo {
     fs::path physical_path;
     string logical_rel_path;
@@ -132,55 +114,122 @@ u64 compute_meta_hash(const string& rel_path, uint8_t meta_type, u64* meta_size_
     return compute_hash_raw(meta_blob.data(), meta_blob.size());
 }
 
-bool read_file_bytes(const string& path, vector<uint8_t>* out) {
+u64 compute_hash_range_stream(const string& path, size_t offset, size_t length) {
+    if (length == 0) return 0;
+
     ifstream file(path, ios::binary);
-    if (!file) return false;
+    if (!file) return 0;
 
-    file.seekg(0, ios::end);
-    const streamoff end_pos = file.tellg();
-    if (end_pos < 0) return false;
-    const size_t size = static_cast<size_t>(end_pos);
-    file.seekg(0, ios::beg);
+    file.seekg(static_cast<streamoff>(offset), ios::beg);
+    if (!file) return 0;
 
-    out->assign(size, 0);
-    if (size == 0) return true;
+    vector<uint8_t> buffer(min(STREAM_BUFFER_SIZE, length));
+    u64 total_hash = 0;
+    u64 range_offset_power = 1;
+    size_t remaining = length;
 
-    file.read(reinterpret_cast<char*>(out->data()), size);
-    return file.good() || static_cast<size_t>(file.gcount()) == size;
+    while (remaining > 0) {
+        const size_t to_read = min(buffer.size(), remaining);
+        file.read(reinterpret_cast<char*>(buffer.data()), static_cast<streamsize>(to_read));
+        const size_t bytes_read = static_cast<size_t>(file.gcount());
+        if (bytes_read == 0) break;
+
+        total_hash += compute_hash_raw(buffer.data(), bytes_read) * range_offset_power;
+        range_offset_power *= power(P, bytes_read);
+        remaining -= bytes_read;
+
+        if (bytes_read < to_read) break;
+    }
+
+    return total_hash;
 }
 
-bool load_file_data(const string& path, size_t expected_size, FileChunkWork* work) {
+u64 combine_chunk_hashes(const vector<u64>& chunk_hashes, const vector<size_t>& chunk_sizes) {
+    u64 total_hash = 0;
+    u64 offset_power = 1;
+    for (size_t chunk_index = 0; chunk_index < chunk_hashes.size(); ++chunk_index) {
+        total_hash += chunk_hashes[chunk_index] * offset_power;
+        offset_power *= power(P, chunk_sizes[chunk_index]);
+    }
+    return total_hash;
+}
+
 #if defined(__unix__) || defined(__APPLE__)
+u64 compute_file_hash_mmap(const string& path, size_t length, int num_threads, bool* ok) {
+    *ok = false;
+    if (length == 0) {
+        *ok = true;
+        return 0;
+    }
+
     int fd = open(path.c_str(), O_RDONLY);
-    if (fd >= 0) {
-        void* mapped = mmap(nullptr, expected_size, PROT_READ, MAP_PRIVATE, fd, 0);
-        close(fd);
-        if (mapped != MAP_FAILED) {
-            work->data = static_cast<const uint8_t*>(mapped);
-            work->is_mapped = true;
-            return true;
-        }
+    if (fd < 0) return 0;
+
+    void* mapped = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, fd, 0);
+    close(fd);
+    if (mapped == MAP_FAILED) return 0;
+
+    const uint8_t* data = static_cast<const uint8_t*>(mapped);
+    const size_t chunk_count = choose_chunk_count(length, num_threads);
+    vector<u64> chunk_hashes(chunk_count, 0);
+    vector<size_t> chunk_sizes(chunk_count, 0);
+    vector<thread> workers;
+    workers.reserve(chunk_count);
+
+    const size_t base_chunk_size = length / chunk_count;
+    const size_t remainder = length % chunk_count;
+
+    size_t offset = 0;
+    for (size_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
+        const size_t chunk_size = base_chunk_size + (chunk_index < remainder ? 1 : 0);
+        chunk_sizes[chunk_index] = chunk_size;
+        workers.emplace_back([&, chunk_index, offset, chunk_size]() {
+            chunk_hashes[chunk_index] = compute_hash_raw(data + offset, chunk_size);
+        });
+        offset += chunk_size;
     }
+
+    for (auto& worker : workers) worker.join();
+    munmap(const_cast<uint8_t*>(data), length);
+
+    *ok = true;
+    return combine_chunk_hashes(chunk_hashes, chunk_sizes);
+}
 #endif
 
-    if (!read_file_bytes(path, &work->owned_data)) return false;
-    work->data = work->owned_data.data();
-#if defined(__unix__) || defined(__APPLE__)
-    work->is_mapped = false;
-#endif
-    return true;
+u64 compute_file_hash_streaming(const string& path, size_t length, int num_threads) {
+    if (length == 0) return 0;
+
+    const size_t chunk_count = choose_chunk_count(length, num_threads);
+    vector<u64> chunk_hashes(chunk_count, 0);
+    vector<size_t> chunk_sizes(chunk_count, 0);
+    vector<thread> workers;
+    workers.reserve(chunk_count);
+
+    const size_t base_chunk_size = length / chunk_count;
+    const size_t remainder = length % chunk_count;
+
+    size_t offset = 0;
+    for (size_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
+        const size_t chunk_size = base_chunk_size + (chunk_index < remainder ? 1 : 0);
+        chunk_sizes[chunk_index] = chunk_size;
+        workers.emplace_back([&, chunk_index, offset, chunk_size]() {
+            chunk_hashes[chunk_index] = compute_hash_range_stream(path, offset, chunk_size);
+        });
+        offset += chunk_size;
+    }
+
+    for (auto& worker : workers) worker.join();
+    return combine_chunk_hashes(chunk_hashes, chunk_sizes);
 }
 
-void release_file_data(FileChunkWork* work) {
+u64 compute_file_hash(const string& path, size_t length, int num_threads) {
 #if defined(__unix__) || defined(__APPLE__)
-    if (work->is_mapped) {
-        munmap(const_cast<uint8_t*>(work->data), work->length);
-        work->data = nullptr;
-        return;
-    }
+    bool mmap_ok = false;
+    const u64 mmap_hash = compute_file_hash_mmap(path, length, num_threads, &mmap_ok);
+    if (mmap_ok) return mmap_hash;
 #endif
-    work->owned_data.clear();
-    work->data = nullptr;
+    return compute_file_hash_streaming(path, length, num_threads);
 }
 
 void print_help(const char* prog_name) {
@@ -315,80 +364,13 @@ int main(int argc, char* argv[]) {
             : (int)auto_threads_u64;
     }
 
-    // 3. Hash file contents with a global worker pool over per-file chunks
+    // 3. Hash file contents one file at a time to keep memory bounded
     auto start_time = chrono::high_resolution_clock::now();
-
-    vector<FileChunkWork> file_works;
-    vector<ChunkTask> chunk_tasks;
 
     for (size_t task_index = 0; task_index < tasks.size(); ++task_index) {
         auto& task = tasks[task_index];
         if (!task.is_file || task.data_size == 0) continue;
-
-        const size_t chunk_count = choose_chunk_count(task.data_size, num_threads);
-        file_works.push_back({
-            task_index,
-            {},
-            nullptr,
-            task.data_size,
-            vector<u64>(chunk_count, 0),
-            vector<size_t>(chunk_count, 0)
-#if defined(__unix__) || defined(__APPLE__)
-            , false
-#endif
-        });
-
-        const size_t file_index = file_works.size() - 1;
-        auto& file_work = file_works[file_index];
-        if (!load_file_data(task.abs_path, task.data_size, &file_work)) {
-            file_works.pop_back();
-            continue;
-        }
-
-        const size_t base_chunk_size = task.data_size / chunk_count;
-        const size_t remainder = task.data_size % chunk_count;
-
-        size_t offset = 0;
-        for (size_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
-            const size_t chunk_size = base_chunk_size + (chunk_index < remainder ? 1 : 0);
-            file_work.chunk_sizes[chunk_index] = chunk_size;
-            chunk_tasks.push_back({file_index, chunk_index, file_work.data + offset, chunk_size});
-            offset += chunk_size;
-        }
-    }
-
-    if (!chunk_tasks.empty()) {
-        atomic<size_t> next_chunk = 0;
-        const size_t worker_count = min<size_t>(max(1, num_threads), chunk_tasks.size());
-        vector<thread> workers;
-        workers.reserve(worker_count);
-
-        for (size_t worker_index = 0; worker_index < worker_count; ++worker_index) {
-            workers.emplace_back([&]() {
-                while (true) {
-                    const size_t chunk_task_index = next_chunk.fetch_add(1);
-                    if (chunk_task_index >= chunk_tasks.size()) return;
-
-                    const auto& chunk_task = chunk_tasks[chunk_task_index];
-                    auto& file_work = file_works[chunk_task.file_index];
-                    file_work.chunk_hashes[chunk_task.chunk_index] = compute_hash_raw(chunk_task.data, chunk_task.size);
-                }
-            });
-        }
-
-        for (auto& worker : workers) worker.join();
-    }
-
-    for (auto& file_work : file_works) {
-        u64 data_hash = 0;
-        u64 offset_power = 1;
-        for (size_t chunk_index = 0; chunk_index < file_work.chunk_hashes.size(); ++chunk_index) {
-            data_hash += file_work.chunk_hashes[chunk_index] * offset_power;
-            offset_power *= power(P, file_work.chunk_sizes[chunk_index]);
-        }
-
-        tasks[file_work.task_index].data_hash = data_hash;
-        release_file_data(&file_work);
+        task.data_hash = compute_file_hash(task.abs_path, task.data_size, num_threads);
     }
 
     // 4. Combine all hashes using polynomial composition
