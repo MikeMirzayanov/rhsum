@@ -14,6 +14,7 @@ TESTS = [
     "tests/test_permission_denied.py",
     "tests/test_follow_symlinks.py",
     "tests/test_follow_symlink_name.py",
+    "tests/test_follow_symlink_cycle.py",
     "tests/test_special_name_only.py",
 ]
 

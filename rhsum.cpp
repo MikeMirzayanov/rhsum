@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <atomic>
 #include <limits>
+#include <unordered_set>
 #if defined(__unix__) || defined(__APPLE__)
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -137,18 +138,41 @@ bool collect_directory_entries(
     bool recursive,
     bool follow_symlinks,
     vector<EntryInfo>* entries,
+    unordered_set<string>* active_dirs,
     string* error
 ) {
+    string active_dir_key;
+    const auto leave_directory = [&]() {
+        if (follow_symlinks && !active_dir_key.empty()) active_dirs->erase(active_dir_key);
+    };
+
+    if (follow_symlinks) {
+        error_code canonical_ec;
+        const fs::path canonical_dir = fs::canonical(dir_path, canonical_ec);
+        if (canonical_ec) {
+            *error = "Failed to resolve directory: " + dir_path.string() + " (" + canonical_ec.message() + ")";
+            return false;
+        }
+        active_dir_key = canonical_dir.generic_string();
+        if (active_dirs->contains(active_dir_key)) {
+            *error = "Symlink cycle detected at: " + dir_path.string();
+            return false;
+        }
+        active_dirs->insert(active_dir_key);
+    }
+
     error_code ec;
     fs::directory_iterator it(dir_path, fs::directory_options::none, ec), end;
     if (ec) {
         *error = "Failed to list directory: " + dir_path.string() + " (" + ec.message() + ")";
+        leave_directory();
         return false;
     }
 
     for (; it != end; it.increment(ec)) {
         if (ec) {
             *error = "Failed to traverse directory: " + dir_path.string() + " (" + ec.message() + ")";
+            leave_directory();
             return false;
         }
 
@@ -158,6 +182,7 @@ bool collect_directory_entries(
         bool is_file = false;
         bool is_other = false;
         if (!classify_entry(entry, follow_symlinks, &is_dir, &is_file, &is_other, error)) {
+            leave_directory();
             return false;
         }
 
@@ -170,12 +195,14 @@ bool collect_directory_entries(
         });
 
         if (recursive && is_dir) {
-            if (!collect_directory_entries(root_path, path, recursive, follow_symlinks, entries, error)) {
+            if (!collect_directory_entries(root_path, path, recursive, follow_symlinks, entries, active_dirs, error)) {
+                leave_directory();
                 return false;
             }
         }
     }
 
+    leave_directory();
     return true;
 }
 
@@ -433,7 +460,8 @@ int main(int argc, char* argv[]) {
     vector<EntryInfo> entries;
     if (input_is_directory) {
         string collect_error;
-        if (!collect_directory_entries(input_path, input_path, recursive, follow_symlinks, &entries, &collect_error)) {
+        unordered_set<string> active_dirs;
+        if (!collect_directory_entries(input_path, input_path, recursive, follow_symlinks, &entries, &active_dirs, &collect_error)) {
             cerr << "Error: " << collect_error << "\n";
             return 1;
         }
