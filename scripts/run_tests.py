@@ -11,6 +11,7 @@ TESTS = [
     "tests/test_constant_1mb_42.py",
     "tests/test_directory_tree.py",
     "tests/test_invalid_threads_arg.py",
+    "tests/test_invalid_cli_args.py",
     "tests/test_permission_denied.py",
     "tests/test_single_symlink_input.py",
     "tests/test_follow_symlinks.py",

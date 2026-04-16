@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <sstream>
 #include <filesystem>
-#include <atomic>
 #include <limits>
 #include <unordered_set>
 #if defined(__unix__) || defined(__APPLE__)
@@ -31,6 +30,7 @@ const u64 P = 1000000000000037ULL;
 const int K = 8;
 const u64 AUTO_THREAD_GRANULARITY = 256ULL * 1024 * 1024;
 const size_t STREAM_BUFFER_SIZE = 8ULL * 1024 * 1024;
+const size_t MAX_STREAMING_BUFFER_BUDGET = 512ULL * 1024 * 1024;
 
 // --- Mathematical Functions ---
 
@@ -537,6 +537,19 @@ bool parse_thread_count(const string& value, int* parsed_threads, string* error)
     }
 }
 
+bool validate_explicit_thread_count(int num_threads, string* error) {
+    if (num_threads <= 0) {
+        *error = "Thread count must be positive";
+        return false;
+    }
+    const size_t requested_threads = static_cast<size_t>(num_threads);
+    if (requested_threads > MAX_STREAMING_BUFFER_BUDGET / STREAM_BUFFER_SIZE) {
+        *error = "Thread count is too large for the streaming buffer budget";
+        return false;
+    }
+    return true;
+}
+
 int main(int argc, char* argv[]) {
     int num_threads = max(1u, thread::hardware_concurrency());
     bool threads_explicitly_set = false;
@@ -557,12 +570,20 @@ int main(int argc, char* argv[]) {
                 cerr << "Error: " << parse_error << "\n";
                 return 1;
             }
+            if (!validate_explicit_thread_count(num_threads, &parse_error)) {
+                cerr << "Error: " << parse_error << ": " << num_threads << "\n";
+                return 1;
+            }
             threads_explicitly_set = true;
         }
         else if (arg == "-R" || arg == "--recursive") recursive = true;
         else if (arg == "-L" || arg == "--follow-symlinks") follow_symlinks = true;
         else if (arg == "-v") verbose = true;
         else if (arg == "--help") { print_help(argv[0]); return 0; }
+        else if (arg.rfind("--", 0) == 0) {
+            cerr << "Error: Unknown option: " << arg << "\n";
+            return 1;
+        }
         else {
             if (!input_path.empty()) {
                 cerr << "Error: Expected exactly one input path, got multiple: "
