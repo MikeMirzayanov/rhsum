@@ -25,6 +25,8 @@ namespace fs = std::filesystem;
 typedef uint64_t u64;
 typedef int64_t i64;
 
+static_assert(sizeof(void*) >= 8, "rhsum requires a 64-bit build target");
+
 const u64 P = 1000000000000037ULL;
 const int K = 8;
 const u64 AUTO_THREAD_GRANULARITY = 256ULL * 1024 * 1024;
