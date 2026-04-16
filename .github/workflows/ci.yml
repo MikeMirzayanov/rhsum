@@ -42,3 +42,100 @@ jobs:
       - name: Test Under Valgrind
         if: runner.os == 'Linux'
         run: python scripts/run_tests.py --valgrind
+
+      - name: Smoke Test Unix Installer
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          archive_dir="$RUNNER_TEMP/rhsum-installer"
+          home_dir="$RUNNER_TEMP/rhsum-home"
+          mkdir -p "$archive_dir" "$home_dir"
+          git archive --format=tar.gz --output "$archive_dir/rhsum.tar.gz" HEAD
+          port="$(python - <<'PY'
+          import socket
+          sock = socket.socket()
+          sock.bind(("127.0.0.1", 0))
+          print(sock.getsockname()[1])
+          sock.close()
+          PY
+          )"
+          python -m http.server "$port" --directory "$archive_dir" >"$RUNNER_TEMP/rhsum-http.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          export RHSUM_TARBALL_URL="http://127.0.0.1:$port/rhsum.tar.gz"
+          python - <<'PY'
+          import os
+          import time
+          import urllib.request
+
+          url = os.environ["RHSUM_TARBALL_URL"]
+          last_error = None
+          for _ in range(50):
+              try:
+                  with urllib.request.urlopen(url, timeout=1):
+                      break
+              except Exception as exc:
+                  last_error = exc
+                  time.sleep(0.1)
+          else:
+              raise SystemExit(f"installer archive server did not start: {last_error}")
+          PY
+          export HOME="$home_dir"
+          bash ./install.sh --user
+          test -x "$HOME/.local/bin/rhsum"
+          "$HOME/.local/bin/rhsum" --help >/dev/null
+          bash ./uninstall.sh --user
+          test ! -e "$HOME/.local/bin/rhsum"
+
+      - name: Smoke Test Windows Installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archiveDir = Join-Path $env:RUNNER_TEMP "rhsum-installer"
+          $binDir = Join-Path $env:RUNNER_TEMP "rhsum-bin"
+          New-Item -ItemType Directory -Force -Path $archiveDir, $binDir | Out-Null
+          git archive --format=zip --output (Join-Path $archiveDir "rhsum.zip") HEAD
+
+          $listener = [System.Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = $listener.LocalEndpoint.Port
+          $listener.Stop()
+
+          $server = Start-Process -FilePath python -ArgumentList "-m", "http.server", "$port", "--directory", "$archiveDir" -PassThru
+          try {
+            $env:RHSUM_ZIP_URL = "http://127.0.0.1:$port/rhsum.zip"
+            $env:RHSUM_USER_BIN_DIR = $binDir
+
+            for ($attempt = 0; $attempt -lt 50; $attempt++) {
+              try {
+                Invoke-WebRequest -Uri $env:RHSUM_ZIP_URL -UseBasicParsing | Out-Null
+                break
+              }
+              catch {
+                Start-Sleep -Milliseconds 100
+              }
+            }
+            if ($attempt -ge 50) {
+              throw "installer archive server did not start"
+            }
+
+            & .\install.ps1 -User
+
+            $installed = Join-Path $binDir "rhsum.exe"
+            if (-not (Test-Path $installed)) {
+              throw "Installer did not create $installed"
+            }
+
+            & $installed --help | Out-Null
+
+            & .\uninstall.ps1 -User
+
+            if (Test-Path $installed) {
+              throw "Uninstaller did not remove $installed"
+            }
+          }
+          finally {
+            if ($server -and -not $server.HasExited) {
+              Stop-Process -Id $server.Id -Force
+            }
+          }
