@@ -548,7 +548,14 @@ int main(int argc, char* argv[]) {
         else if (arg == "-L" || arg == "--follow-symlinks") follow_symlinks = true;
         else if (arg == "-v") verbose = true;
         else if (arg == "--help") { print_help(argv[0]); return 0; }
-        else input_path = arg;
+        else {
+            if (!input_path.empty()) {
+                cerr << "Error: Expected exactly one input path, got multiple: "
+                     << input_path << " and " << arg << "\n";
+                return 1;
+            }
+            input_path = arg;
+        }
     }
 
     if (input_path.empty()) {
