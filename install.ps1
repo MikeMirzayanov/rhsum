@@ -64,7 +64,7 @@ function Invoke-Python {
     }
 
     if ($LASTEXITCODE -ne 0) {
-        throw "Python command failed with exit code $LASTEXITCODE: $($Args -join ' ')"
+        throw "Python command failed with exit code ${LASTEXITCODE}: $($Args -join ' ')"
     }
 }
 
