@@ -543,11 +543,15 @@ int main(int argc, char* argv[]) {
     bool verbose = false;
     bool recursive = false;
     bool follow_symlinks = false;
+    bool end_of_options = false;
     string input_path;
 
     for (int i = 1; i < argc; ++i) {
         string arg = argv[i];
-        if (arg == "-T" || arg == "--threads") {
+        if (!end_of_options && arg == "--") {
+            end_of_options = true;
+        }
+        else if (!end_of_options && (arg == "-T" || arg == "--threads")) {
             if (i + 1 >= argc) {
                 cerr << "Error: Missing value for " << arg << "\n";
                 return 1;
@@ -563,11 +567,11 @@ int main(int argc, char* argv[]) {
             }
             threads_explicitly_set = true;
         }
-        else if (arg == "-R" || arg == "--recursive") recursive = true;
-        else if (arg == "-L" || arg == "--follow-symlinks") follow_symlinks = true;
-        else if (arg == "-v") verbose = true;
-        else if (arg == "--help") { print_help(argv[0]); return 0; }
-        else if (arg.rfind("--", 0) == 0) {
+        else if (!end_of_options && (arg == "-R" || arg == "--recursive")) recursive = true;
+        else if (!end_of_options && (arg == "-L" || arg == "--follow-symlinks")) follow_symlinks = true;
+        else if (!end_of_options && arg == "-v") verbose = true;
+        else if (!end_of_options && arg == "--help") { print_help(argv[0]); return 0; }
+        else if (!end_of_options && !arg.empty() && arg[0] == '-') {
             cerr << "Error: Unknown option: " << arg << "\n";
             return 1;
         }
