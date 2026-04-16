@@ -28,6 +28,7 @@ def main() -> int:
         cmd = [
             cxx,
             "-O3",
+            "-std=c++20",
             "-march=native",
             "-pthread",
             str(REPO_ROOT / "rhsum.cpp"),

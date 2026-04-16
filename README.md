@@ -5,7 +5,7 @@
 The canonical build command for this project is:
 
 ```bash
-g++ -O3 -march=native -pthread rhsum.cpp -o rhsum
+g++ -O3 -std=c++20 -march=native -pthread rhsum.cpp -o rhsum
 ```
 
 ## Layout
@@ -40,7 +40,7 @@ Linux and other POSIX platforms use an `mmap` fast path for file reads. Other pl
 Canonical:
 
 ```bash
-g++ -O3 -march=native -pthread rhsum.cpp -o rhsum
+g++ -O3 -std=c++20 -march=native -pthread rhsum.cpp -o rhsum
 ```
 
 Convenience wrapper:

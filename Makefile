@@ -1,5 +1,5 @@
 CXX := g++
-CXXFLAGS := -O3 -march=native -pthread
+CXXFLAGS := -O3 -std=c++20 -march=native -pthread
 TARGET := rhsum
 SRC := rhsum.cpp
 PREFIX ?= $(HOME)/.local
