@@ -94,6 +94,91 @@ struct EntryInfo {
     bool is_other;
 };
 
+bool classify_entry(
+    const fs::directory_entry& entry,
+    bool follow_symlinks,
+    bool* is_dir,
+    bool* is_file,
+    bool* is_other,
+    string* error
+) {
+    error_code ec;
+    const fs::file_status symlink_st = entry.symlink_status(ec);
+    if (ec) {
+        *error = "Failed to inspect path: " + entry.path().string() + " (" + ec.message() + ")";
+        return false;
+    }
+
+    if (fs::is_symlink(symlink_st) && !follow_symlinks) {
+        *is_dir = false;
+        *is_file = false;
+        *is_other = true;
+        return true;
+    }
+
+    fs::file_status st = symlink_st;
+    if (fs::is_symlink(symlink_st) && follow_symlinks) {
+        st = entry.status(ec);
+        if (ec) {
+            *error = "Failed to inspect path: " + entry.path().string() + " (" + ec.message() + ")";
+            return false;
+        }
+    }
+
+    *is_dir = fs::is_directory(st);
+    *is_file = fs::is_regular_file(st);
+    *is_other = !*is_dir && !*is_file;
+    return true;
+}
+
+bool collect_directory_entries(
+    const fs::path& root_path,
+    const fs::path& dir_path,
+    bool recursive,
+    bool follow_symlinks,
+    vector<EntryInfo>* entries,
+    string* error
+) {
+    error_code ec;
+    fs::directory_iterator it(dir_path, fs::directory_options::none, ec), end;
+    if (ec) {
+        *error = "Failed to list directory: " + dir_path.string() + " (" + ec.message() + ")";
+        return false;
+    }
+
+    for (; it != end; it.increment(ec)) {
+        if (ec) {
+            *error = "Failed to traverse directory: " + dir_path.string() + " (" + ec.message() + ")";
+            return false;
+        }
+
+        const fs::directory_entry& entry = *it;
+        const fs::path path = entry.path();
+        bool is_dir = false;
+        bool is_file = false;
+        bool is_other = false;
+        if (!classify_entry(entry, follow_symlinks, &is_dir, &is_file, &is_other, error)) {
+            return false;
+        }
+
+        entries->push_back({
+            path,
+            path.lexically_relative(root_path).string(),
+            is_dir,
+            is_file,
+            is_other
+        });
+
+        if (recursive && is_dir) {
+            if (!collect_directory_entries(root_path, path, recursive, follow_symlinks, entries, error)) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 string format_size(size_t bytes) {
     const char* units[] = {"B", "KB", "MB", "GB", "TB"};
     double size = (double)bytes;
@@ -114,8 +199,12 @@ u64 compute_meta_hash(const string& rel_path, uint8_t meta_type, u64* meta_size_
     return compute_hash_raw(meta_blob.data(), meta_blob.size());
 }
 
-u64 compute_hash_range_stream(const string& path, size_t offset, size_t length) {
-    if (length == 0) return 0;
+u64 compute_hash_range_stream(const string& path, size_t offset, size_t length, bool* ok) {
+    *ok = false;
+    if (length == 0) {
+        *ok = true;
+        return 0;
+    }
 
     ifstream file(path, ios::binary);
     if (!file) return 0;
@@ -141,6 +230,9 @@ u64 compute_hash_range_stream(const string& path, size_t offset, size_t length) 
         if (bytes_read < to_read) break;
     }
 
+    if (remaining != 0 || file.bad()) return 0;
+
+    *ok = true;
     return total_hash;
 }
 
@@ -197,12 +289,17 @@ u64 compute_file_hash_mmap(const string& path, size_t length, int num_threads, b
 }
 #endif
 
-u64 compute_file_hash_streaming(const string& path, size_t length, int num_threads) {
-    if (length == 0) return 0;
+u64 compute_file_hash_streaming(const string& path, size_t length, int num_threads, bool* ok) {
+    *ok = false;
+    if (length == 0) {
+        *ok = true;
+        return 0;
+    }
 
     const size_t chunk_count = choose_chunk_count(length, num_threads);
     vector<u64> chunk_hashes(chunk_count, 0);
     vector<size_t> chunk_sizes(chunk_count, 0);
+    vector<uint8_t> chunk_ok(chunk_count, 0);
     vector<thread> workers;
     workers.reserve(chunk_count);
 
@@ -214,22 +311,31 @@ u64 compute_file_hash_streaming(const string& path, size_t length, int num_threa
         const size_t chunk_size = base_chunk_size + (chunk_index < remainder ? 1 : 0);
         chunk_sizes[chunk_index] = chunk_size;
         workers.emplace_back([&, chunk_index, offset, chunk_size]() {
-            chunk_hashes[chunk_index] = compute_hash_range_stream(path, offset, chunk_size);
+            bool local_ok = false;
+            chunk_hashes[chunk_index] = compute_hash_range_stream(path, offset, chunk_size, &local_ok);
+            chunk_ok[chunk_index] = local_ok ? 1 : 0;
         });
         offset += chunk_size;
     }
 
     for (auto& worker : workers) worker.join();
+    for (uint8_t chunk_result : chunk_ok) {
+        if (!chunk_result) return 0;
+    }
+    *ok = true;
     return combine_chunk_hashes(chunk_hashes, chunk_sizes);
 }
 
-u64 compute_file_hash(const string& path, size_t length, int num_threads) {
+u64 compute_file_hash(const string& path, size_t length, int num_threads, bool* ok) {
 #if defined(__unix__) || defined(__APPLE__)
     bool mmap_ok = false;
     const u64 mmap_hash = compute_file_hash_mmap(path, length, num_threads, &mmap_ok);
-    if (mmap_ok) return mmap_hash;
+    if (mmap_ok) {
+        *ok = true;
+        return mmap_hash;
+    }
 #endif
-    return compute_file_hash_streaming(path, length, num_threads);
+    return compute_file_hash_streaming(path, length, num_threads, ok);
 }
 
 void print_help(const char* prog_name) {
@@ -271,12 +377,22 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (!fs::exists(input_path)) {
+    error_code fs_ec;
+    if (!fs::exists(input_path, fs_ec)) {
+        if (fs_ec) {
+            cerr << "Error: Failed to access path: " << input_path << " (" << fs_ec.message() << ")\n";
+            return 1;
+        }
         cerr << "Error: Path does not exist: " << input_path << endl;
         return 1;
     }
 
-    const bool input_is_directory = fs::is_directory(input_path);
+    fs_ec.clear();
+    const bool input_is_directory = fs::is_directory(input_path, fs_ec);
+    if (fs_ec) {
+        cerr << "Error: Failed to inspect path: " << input_path << " (" << fs_ec.message() << ")\n";
+        return 1;
+    }
     vector<HashTask> tasks;
     u64 current_global_offset = 0;
     u64 largest_file_size = 0;
@@ -284,31 +400,10 @@ int main(int argc, char* argv[]) {
     // 1. Collect entries
     vector<EntryInfo> entries;
     if (input_is_directory) {
-        auto options = follow_symlinks ? fs::directory_options::follow_directory_symlink
-                                       : fs::directory_options::none;
-
-        if (recursive) {
-            for (const auto& entry : fs::recursive_directory_iterator(input_path, options)) {
-                const fs::path path = entry.path();
-                entries.push_back({
-                    path,
-                    path.lexically_relative(input_path).string(),
-                    entry.is_directory(),
-                    entry.is_regular_file(),
-                    !entry.is_directory() && !entry.is_regular_file()
-                });
-            }
-        } else {
-            for (const auto& entry : fs::directory_iterator(input_path, options)) {
-                const fs::path path = entry.path();
-                entries.push_back({
-                    path,
-                    path.lexically_relative(input_path).string(),
-                    entry.is_directory(),
-                    entry.is_regular_file(),
-                    !entry.is_directory() && !entry.is_regular_file()
-                });
-            }
+        string collect_error;
+        if (!collect_directory_entries(input_path, input_path, recursive, follow_symlinks, &entries, &collect_error)) {
+            cerr << "Error: " << collect_error << "\n";
+            return 1;
         }
     } else {
         entries.push_back({fs::path(input_path), "", false, true, false});
@@ -346,9 +441,13 @@ int main(int argc, char* argv[]) {
         }
 
         if (is_file) {
-            try {
-                task.data_size = fs::file_size(entry.physical_path);
-            } catch (...) { task.data_size = 0; }
+            error_code size_ec;
+            task.data_size = fs::file_size(entry.physical_path, size_ec);
+            if (size_ec) {
+                cerr << "Error: Failed to get file size: " << entry.physical_path.string()
+                     << " (" << size_ec.message() << ")\n";
+                return 1;
+            }
             largest_file_size = max(largest_file_size, task.data_size);
             current_global_offset += task.data_size;
         }
@@ -370,7 +469,12 @@ int main(int argc, char* argv[]) {
     for (size_t task_index = 0; task_index < tasks.size(); ++task_index) {
         auto& task = tasks[task_index];
         if (!task.is_file || task.data_size == 0) continue;
-        task.data_hash = compute_file_hash(task.abs_path, task.data_size, num_threads);
+        bool hash_ok = false;
+        task.data_hash = compute_file_hash(task.abs_path, task.data_size, num_threads, &hash_ok);
+        if (!hash_ok) {
+            cerr << "Error: Failed to read file: " << task.abs_path << "\n";
+            return 1;
+        }
     }
 
     // 4. Combine all hashes using polynomial composition
