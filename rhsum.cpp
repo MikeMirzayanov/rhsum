@@ -15,6 +15,7 @@
 #if defined(__unix__) || defined(__APPLE__)
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -294,6 +295,16 @@ u64 compute_file_hash_mmap(const string& path, size_t length, int num_threads, b
 
     int fd = open(path.c_str(), O_RDONLY);
     if (fd < 0) return 0;
+
+    struct stat st;
+    if (fstat(fd, &st) != 0) {
+        close(fd);
+        return 0;
+    }
+    if (st.st_size < 0 || static_cast<uint64_t>(st.st_size) != length) {
+        close(fd);
+        return 0;
+    }
 
     void* mapped = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
