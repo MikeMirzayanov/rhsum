@@ -82,7 +82,6 @@ struct HashTask {
     uint8_t meta_type;
     u64 meta_size;
     u64 data_size;   // Size of file content
-    u64 global_offset;
     u64 meta_hash;
     u64 data_hash;
 };
@@ -473,7 +472,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     vector<HashTask> tasks;
-    u64 current_global_offset = 0;
     u64 largest_file_size = 0;
 
     // 1. Collect entries
@@ -506,7 +504,6 @@ int main(int argc, char* argv[]) {
         task.is_dir = is_dir;
         task.is_file = is_file;
         task.meta_type = is_dir ? 1 : (is_file ? 0 : 2);
-        task.global_offset = current_global_offset;
         task.meta_size = 0;
         task.meta_hash = 0;
         task.data_hash = 0;
@@ -515,7 +512,6 @@ int main(int argc, char* argv[]) {
         if (input_is_directory) {
             task.rel_path = entry.logical_rel_path;
             task.meta_hash = compute_meta_hash(task.rel_path, task.meta_type, &task.meta_size);
-            current_global_offset += task.meta_size;
         } else {
             task.rel_path.clear();
         }
@@ -529,7 +525,6 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             largest_file_size = max(largest_file_size, task.data_size);
-            current_global_offset += task.data_size;
         }
         tasks.push_back(task);
     }
@@ -577,9 +572,11 @@ int main(int argc, char* argv[]) {
     cout << hex << setfill('0') << setw(16) << final_hash << dec << endl;
 
     if (verbose) {
+        u64 virtual_stream_size = 0;
+        for (const auto& task : tasks) virtual_stream_size += task.meta_size + task.data_size;
         cerr << "\n--- Statistics ---" << endl;
         cerr << "Items:           " << tasks.size() << endl;
-        cerr << "Virtual stream:  " << format_size(current_global_offset) << endl;
+        cerr << "Virtual stream:  " << format_size(virtual_stream_size) << endl;
         cerr << "Threads:         " << num_threads << endl;
         cerr << "Time:            " << fixed << setprecision(3) << diff.count() << "s" << endl;
     }
