@@ -189,7 +189,8 @@ void print_help(const char* prog_name) {
     cerr << "Options:\n";
     cerr << "  -T, --threads <N>   Number of threads\n";
     cerr << "  -R, --recursive     Recursive directory processing\n";
-    cerr << "  -L                  Follow symbolic links\n";
+    cerr << "  -L, --follow-symlinks\n";
+    cerr << "                      Follow symbolic links\n";
     cerr << "  -v                  Verbose mode\n";
     cerr << "  --help              Show this help message\n";
     cerr << "\nDefault threads without -T: max(hardware cores, ceil(largest file bytes / 256 MiB))\n";
@@ -210,7 +211,7 @@ int main(int argc, char* argv[]) {
             threads_explicitly_set = true;
         }
         else if (arg == "-R" || arg == "--recursive") recursive = true;
-        else if (arg == "-L") follow_symlinks = true;
+        else if (arg == "-L" || arg == "--follow-symlinks") follow_symlinks = true;
         else if (arg == "-v") verbose = true;
         else if (arg == "--help") { print_help(argv[0]); return 0; }
         else input_path = arg;

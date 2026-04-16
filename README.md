@@ -101,7 +101,7 @@ python3 scripts/run_tests.py --valgrind
 
 - `-T, --threads <N>`: number of worker threads
 - `-R, --recursive`: recursively process directories
-- `-L`: follow symbolic links
+- `-L, --follow-symlinks`: follow symbolic links
 - `-v`: print execution statistics to stderr
 - `--help`: show usage help
 
