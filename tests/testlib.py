@@ -84,6 +84,32 @@ def can_follow_directory_symlinks() -> bool:
         return no_follow_hash != follow_hash
 
 
+def can_follow_single_file_symlinks() -> bool:
+    if not can_create_symlinks():
+        return False
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        target = root / "target.bin"
+        link = root / "alias.bin"
+
+        target.write_bytes(b"probe")
+
+        try:
+            os.symlink(target, link)
+        except (OSError, NotImplementedError):
+            return False
+
+        try:
+            target_hash = run_rhsum([target], cwd=REPO_ROOT)
+            no_follow_hash = run_rhsum([link], cwd=REPO_ROOT)
+            follow_hash = run_rhsum(["-L", link], cwd=REPO_ROOT)
+        except Exception:
+            return False
+
+        return no_follow_hash != target_hash and follow_hash == target_hash
+
+
 def has_mkfifo() -> bool:
     return hasattr(os, "mkfifo")
 

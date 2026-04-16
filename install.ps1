@@ -62,6 +62,10 @@ function Invoke-Python {
     } else {
         & $script:PythonCommand[0] @Args
     }
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Python command failed with exit code $LASTEXITCODE: $($Args -join ' ')"
+    }
 }
 
 function Add-PathEntry {

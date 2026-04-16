@@ -4,12 +4,12 @@ import os
 import tempfile
 from pathlib import Path
 
-from testlib import can_create_symlinks, run_rhsum, skip
+from testlib import can_follow_single_file_symlinks, run_rhsum, skip
 
 
 def main() -> int:
-    if not can_create_symlinks():
-        return skip("symlinks are unavailable on this platform")
+    if not can_follow_single_file_symlinks():
+        return skip("single-file symlink traversal via -L is unavailable on this platform")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
