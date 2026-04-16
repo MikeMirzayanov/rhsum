@@ -95,8 +95,8 @@ struct EntryInfo {
     bool is_other;
 };
 
-bool classify_entry(
-    const fs::directory_entry& entry,
+bool classify_path(
+    const fs::path& path,
     bool follow_symlinks,
     bool* is_dir,
     bool* is_file,
@@ -104,9 +104,9 @@ bool classify_entry(
     string* error
 ) {
     error_code ec;
-    const fs::file_status symlink_st = entry.symlink_status(ec);
+    const fs::file_status symlink_st = fs::symlink_status(path, ec);
     if (ec) {
-        *error = "Failed to inspect path: " + entry.path().string() + " (" + ec.message() + ")";
+        *error = "Failed to inspect path: " + path.string() + " (" + ec.message() + ")";
         return false;
     }
 
@@ -119,9 +119,9 @@ bool classify_entry(
 
     fs::file_status st = symlink_st;
     if (fs::is_symlink(symlink_st) && follow_symlinks) {
-        st = entry.status(ec);
+        st = fs::status(path, ec);
         if (ec) {
-            *error = "Failed to inspect path: " + entry.path().string() + " (" + ec.message() + ")";
+            *error = "Failed to inspect path: " + path.string() + " (" + ec.message() + ")";
             return false;
         }
     }
@@ -130,6 +130,17 @@ bool classify_entry(
     *is_file = fs::is_regular_file(st);
     *is_other = !*is_dir && !*is_file;
     return true;
+}
+
+bool classify_entry(
+    const fs::directory_entry& entry,
+    bool follow_symlinks,
+    bool* is_dir,
+    bool* is_file,
+    bool* is_other,
+    string* error
+) {
+    return classify_path(entry.path(), follow_symlinks, is_dir, is_file, is_other, error);
 }
 
 bool collect_directory_entries(
@@ -446,10 +457,18 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    fs_ec.clear();
-    const bool input_is_directory = fs::is_directory(input_path, fs_ec);
-    if (fs_ec) {
-        cerr << "Error: Failed to inspect path: " << input_path << " (" << fs_ec.message() << ")\n";
+    bool input_is_directory = false;
+    bool input_is_file = false;
+    bool input_is_other = false;
+    string input_classification_error;
+    if (!classify_path(
+            fs::path(input_path),
+            follow_symlinks,
+            &input_is_directory,
+            &input_is_file,
+            &input_is_other,
+            &input_classification_error)) {
+        cerr << "Error: " << input_classification_error << "\n";
         return 1;
     }
     vector<HashTask> tasks;
@@ -466,7 +485,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     } else {
-        entries.push_back({fs::path(input_path), "", false, true, false});
+        entries.push_back({fs::path(input_path), "", input_is_directory, input_is_file, input_is_other});
     }
 
     // Sort paths lexicographically to ensure determinism across different runs/FS

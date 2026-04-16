@@ -12,6 +12,7 @@ TESTS = [
     "tests/test_directory_tree.py",
     "tests/test_invalid_threads_arg.py",
     "tests/test_permission_denied.py",
+    "tests/test_single_symlink_input.py",
     "tests/test_follow_symlinks.py",
     "tests/test_follow_symlink_name.py",
     "tests/test_follow_symlink_cycle.py",
