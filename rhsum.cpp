@@ -47,19 +47,19 @@ u64 power(u64 base, u64 exp) {
 // ILP optimized polynomial hash for a memory block
 u64 compute_hash_raw(const uint8_t* data, size_t length) {
     u64 h[K] = {0};
-    u64 p_pow = 1;
     const u64 P_K = power(P, K);
-    u64 p_small[K];
-    p_small[0] = 1;
-    for (int j = 1; j < K; ++j) p_small[j] = p_small[j-1] * P;
+    u64 p_current[K];
+    p_current[0] = 1;
+    for (int j = 1; j < K; ++j) p_current[j] = p_current[j - 1] * P;
 
     size_t i = 0;
     for (; i + K <= length; i += K) {
         for (int j = 0; j < K; ++j) {
-            h[j] += (u64)data[i + j] * (p_pow * p_small[j]);
+            h[j] += (u64)data[i + j] * p_current[j];
+            p_current[j] *= P_K;
         }
-        p_pow *= P_K;
     }
+    u64 p_pow = p_current[0];
     for (; i < length; ++i) {
         h[0] += (u64)data[i] * p_pow;
         p_pow *= P;
