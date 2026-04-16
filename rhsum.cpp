@@ -351,6 +351,30 @@ void print_help(const char* prog_name) {
     cerr << "\nDefault threads without -T: max(hardware cores, ceil(largest file bytes / 256 MiB))\n";
 }
 
+bool parse_thread_count(const string& value, int* parsed_threads, string* error) {
+    try {
+        size_t consumed = 0;
+        const long long parsed = stoll(value, &consumed);
+        if (consumed != value.size()) {
+            *error = "Invalid thread count: " + value;
+            return false;
+        }
+        if (parsed <= 0) {
+            *error = "Thread count must be positive: " + value;
+            return false;
+        }
+        if (parsed > numeric_limits<int>::max()) {
+            *error = "Thread count is too large: " + value;
+            return false;
+        }
+        *parsed_threads = static_cast<int>(parsed);
+        return true;
+    } catch (const exception&) {
+        *error = "Invalid thread count: " + value;
+        return false;
+    }
+}
+
 int main(int argc, char* argv[]) {
     int num_threads = max(1u, thread::hardware_concurrency());
     bool threads_explicitly_set = false;
@@ -361,8 +385,16 @@ int main(int argc, char* argv[]) {
 
     for (int i = 1; i < argc; ++i) {
         string arg = argv[i];
-        if ((arg == "-T" || arg == "--threads") && i + 1 < argc) {
-            num_threads = stoi(argv[++i]);
+        if (arg == "-T" || arg == "--threads") {
+            if (i + 1 >= argc) {
+                cerr << "Error: Missing value for " << arg << "\n";
+                return 1;
+            }
+            string parse_error;
+            if (!parse_thread_count(argv[++i], &num_threads, &parse_error)) {
+                cerr << "Error: " << parse_error << "\n";
+                return 1;
+            }
             threads_explicitly_set = true;
         }
         else if (arg == "-R" || arg == "--recursive") recursive = true;
