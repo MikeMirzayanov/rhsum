@@ -237,15 +237,12 @@ u64 compute_meta_hash(const string& rel_path, uint8_t meta_type, u64* meta_size_
     return compute_hash_raw(meta_blob.data(), meta_blob.size());
 }
 
-u64 compute_hash_range_stream(const string& path, size_t offset, size_t length, bool* ok) {
+u64 compute_hash_range_stream(ifstream& file, size_t offset, size_t length, bool* ok) {
     *ok = false;
     if (length == 0) {
         *ok = true;
         return 0;
     }
-
-    ifstream file(path, ios::binary);
-    if (!file) return 0;
 
     file.seekg(static_cast<streamoff>(offset), ios::beg);
     if (!file) return 0;
@@ -274,6 +271,44 @@ u64 compute_hash_range_stream(const string& path, size_t offset, size_t length, 
     *ok = true;
     return total_hash;
 }
+
+#if defined(__unix__) || defined(__APPLE__)
+u64 compute_hash_range_pread(int fd, size_t offset, size_t length, bool* ok) {
+    *ok = false;
+    if (length == 0) {
+        *ok = true;
+        return 0;
+    }
+
+    vector<uint8_t> buffer(min(STREAM_BUFFER_SIZE, length));
+    const u64 full_block_power = power(P, buffer.size());
+    u64 total_hash = 0;
+    u64 range_offset_power = 1;
+    size_t remaining = length;
+    size_t file_offset = offset;
+
+    while (remaining > 0) {
+        const size_t to_read = min(buffer.size(), remaining);
+        const ssize_t bytes_read = pread(fd, buffer.data(), to_read, static_cast<off_t>(file_offset));
+        if (bytes_read < 0) return 0;
+        if (bytes_read == 0) break;
+
+        total_hash += compute_hash_raw(buffer.data(), static_cast<size_t>(bytes_read)) * range_offset_power;
+        range_offset_power *= (static_cast<size_t>(bytes_read) == buffer.size())
+            ? full_block_power
+            : power(P, static_cast<size_t>(bytes_read));
+        remaining -= static_cast<size_t>(bytes_read);
+        file_offset += static_cast<size_t>(bytes_read);
+
+        if (static_cast<size_t>(bytes_read) < to_read) break;
+    }
+
+    if (remaining != 0) return 0;
+
+    *ok = true;
+    return total_hash;
+}
+#endif
 
 u64 combine_chunk_hashes(const vector<u64>& chunk_hashes, const vector<size_t>& chunk_sizes) {
     u64 total_hash = 0;
@@ -351,10 +386,58 @@ u64 compute_file_hash_streaming(const string& path, size_t length, int num_threa
         return 0;
     }
 
+#if defined(__unix__) || defined(__APPLE__)
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd >= 0) {
+        struct stat st;
+        if (fstat(fd, &st) == 0 && st.st_size >= 0 && static_cast<uint64_t>(st.st_size) == length) {
+            const size_t chunk_count = choose_chunk_count(length, num_threads);
+            if (chunk_count == 1) {
+                bool chunk_ok = false;
+                const u64 hash = compute_hash_range_pread(fd, 0, length, &chunk_ok);
+                close(fd);
+                *ok = chunk_ok;
+                return hash;
+            }
+            vector<u64> chunk_hashes(chunk_count, 0);
+            vector<size_t> chunk_sizes(chunk_count, 0);
+            vector<uint8_t> chunk_ok(chunk_count, 0);
+            vector<thread> workers;
+            workers.reserve(chunk_count);
+
+            const size_t base_chunk_size = length / chunk_count;
+            const size_t remainder = length % chunk_count;
+
+            size_t offset = 0;
+            for (size_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
+                const size_t chunk_size = base_chunk_size + (chunk_index < remainder ? 1 : 0);
+                chunk_sizes[chunk_index] = chunk_size;
+                workers.emplace_back([fd, &chunk_hashes, &chunk_ok, chunk_index, offset, chunk_size]() {
+                    bool local_ok = false;
+                    chunk_hashes[chunk_index] = compute_hash_range_pread(fd, offset, chunk_size, &local_ok);
+                    chunk_ok[chunk_index] = local_ok ? 1 : 0;
+                });
+                offset += chunk_size;
+            }
+
+            for (auto& worker : workers) worker.join();
+            close(fd);
+            for (uint8_t chunk_result : chunk_ok) {
+                if (!chunk_result) return 0;
+            }
+            *ok = true;
+            return combine_chunk_hashes(chunk_hashes, chunk_sizes);
+        }
+        close(fd);
+    }
+#endif
+
     const size_t chunk_count = choose_chunk_count(length, num_threads);
+    ifstream file(path, ios::binary);
+    if (!file) return 0;
     if (chunk_count == 1) {
         bool chunk_ok = false;
-        const u64 hash = compute_hash_range_stream(path, 0, length, &chunk_ok);
+        const u64 hash = compute_hash_range_stream(file, 0, length, &chunk_ok);
         *ok = chunk_ok;
         return hash;
     }
@@ -371,9 +454,12 @@ u64 compute_file_hash_streaming(const string& path, size_t length, int num_threa
     for (size_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
         const size_t chunk_size = base_chunk_size + (chunk_index < remainder ? 1 : 0);
         chunk_sizes[chunk_index] = chunk_size;
-        workers.emplace_back([&chunk_hashes, &chunk_ok, path, chunk_index, offset, chunk_size]() {
+        workers.emplace_back([path, &chunk_hashes, &chunk_ok, chunk_index, offset, chunk_size]() {
+            ifstream chunk_file(path, ios::binary);
             bool local_ok = false;
-            chunk_hashes[chunk_index] = compute_hash_range_stream(path, offset, chunk_size, &local_ok);
+            if (chunk_file) {
+                chunk_hashes[chunk_index] = compute_hash_range_stream(chunk_file, offset, chunk_size, &local_ok);
+            }
             chunk_ok[chunk_index] = local_ok ? 1 : 0;
         });
         offset += chunk_size;
