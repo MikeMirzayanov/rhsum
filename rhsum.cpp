@@ -712,12 +712,18 @@ int main(int argc, char* argv[]) {
 
     if (verbose) {
         u64 virtual_stream_size = 0;
+        u64 total_file_bytes = 0;
         for (const auto& task : tasks) virtual_stream_size += task.meta_size + task.data_size;
+        for (const auto& task : tasks) total_file_bytes += task.data_size;
+        const double mb_per_sec = (total_file_bytes == 0 || diff.count() <= 0.0)
+            ? 0.0
+            : (static_cast<double>(total_file_bytes) / (1024.0 * 1024.0)) / diff.count();
         cerr << "\n--- Statistics ---" << endl;
         cerr << "Items:           " << tasks.size() << endl;
         cerr << "Virtual stream:  " << format_size(virtual_stream_size) << endl;
         cerr << "Threads:         " << num_threads << endl;
         cerr << "Time:            " << fixed << setprecision(3) << diff.count() << "s" << endl;
+        cerr << "Speed:           " << fixed << setprecision(3) << mb_per_sec << " MB/sec" << endl;
     }
 
     return 0;
