@@ -312,6 +312,12 @@ u64 compute_file_hash_mmap(const string& path, size_t length, int num_threads, b
 
     const uint8_t* data = static_cast<const uint8_t*>(mapped);
     const size_t chunk_count = choose_chunk_count(length, num_threads);
+    if (chunk_count == 1) {
+        const u64 hash = compute_hash_raw(data, length);
+        munmap(const_cast<uint8_t*>(data), length);
+        *ok = true;
+        return hash;
+    }
     vector<u64> chunk_hashes(chunk_count, 0);
     vector<size_t> chunk_sizes(chunk_count, 0);
     vector<thread> workers;
@@ -346,6 +352,12 @@ u64 compute_file_hash_streaming(const string& path, size_t length, int num_threa
     }
 
     const size_t chunk_count = choose_chunk_count(length, num_threads);
+    if (chunk_count == 1) {
+        bool chunk_ok = false;
+        const u64 hash = compute_hash_range_stream(path, 0, length, &chunk_ok);
+        *ok = chunk_ok;
+        return hash;
+    }
     vector<u64> chunk_hashes(chunk_count, 0);
     vector<size_t> chunk_sizes(chunk_count, 0);
     vector<uint8_t> chunk_ok(chunk_count, 0);
