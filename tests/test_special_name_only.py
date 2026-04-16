@@ -51,7 +51,6 @@ def main() -> int:
                 ),
                 str(left_fifo),
             ],
-            cwd="/codex/rhsum",
         )
         try:
             time.sleep(0.1)
