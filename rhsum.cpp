@@ -507,7 +507,7 @@ void print_help(const char* prog_name) {
     cerr << "                      Follow symbolic links\n";
     cerr << "  -v                  Verbose mode\n";
     cerr << "  --help              Show this help message\n";
-    cerr << "\nDefault threads without -T: max(hardware cores, ceil(largest file bytes / 256 MiB))\n";
+    cerr << "\nDefault threads without -T: min(hardware cores, ceil(largest file bytes / 256 MiB))\n";
 }
 
 bool parse_thread_count(const string& value, int* parsed_threads, string* error) {
@@ -681,7 +681,7 @@ int main(int argc, char* argv[]) {
     if (!threads_explicitly_set) {
         const u64 size_based_threads_u64 = max<u64>(1, (largest_file_size + AUTO_THREAD_GRANULARITY - 1) / AUTO_THREAD_GRANULARITY);
         const u64 core_count_u64 = max<u64>(1, thread::hardware_concurrency());
-        const u64 auto_threads_u64 = max(core_count_u64, size_based_threads_u64);
+        const u64 auto_threads_u64 = min(core_count_u64, size_based_threads_u64);
         num_threads = (auto_threads_u64 > (u64)numeric_limits<int>::max())
             ? numeric_limits<int>::max()
             : (int)auto_threads_u64;
