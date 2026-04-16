@@ -330,7 +330,7 @@ u64 compute_file_hash_mmap(const string& path, size_t length, int num_threads, b
     for (size_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
         const size_t chunk_size = base_chunk_size + (chunk_index < remainder ? 1 : 0);
         chunk_sizes[chunk_index] = chunk_size;
-        workers.emplace_back([&, chunk_index, offset, chunk_size]() {
+        workers.emplace_back([data, &chunk_hashes, chunk_index, offset, chunk_size]() {
             chunk_hashes[chunk_index] = compute_hash_raw(data + offset, chunk_size);
         });
         offset += chunk_size;
@@ -371,7 +371,7 @@ u64 compute_file_hash_streaming(const string& path, size_t length, int num_threa
     for (size_t chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
         const size_t chunk_size = base_chunk_size + (chunk_index < remainder ? 1 : 0);
         chunk_sizes[chunk_index] = chunk_size;
-        workers.emplace_back([&, chunk_index, offset, chunk_size]() {
+        workers.emplace_back([&chunk_hashes, &chunk_ok, path, chunk_index, offset, chunk_size]() {
             bool local_ok = false;
             chunk_hashes[chunk_index] = compute_hash_range_stream(path, offset, chunk_size, &local_ok);
             chunk_ok[chunk_index] = local_ok ? 1 : 0;
