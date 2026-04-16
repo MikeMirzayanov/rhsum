@@ -61,6 +61,18 @@ Install into your user `PATH`:
 make install
 ```
 
+Install directly from GitHub with `curl | bash`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MikeMirzayanov/rhsum/main/install.sh | sudo bash
+```
+
+User-only install from the same script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MikeMirzayanov/rhsum/main/install.sh | bash -s -- --user
+```
+
 Install system-wide for all users:
 
 ```bash
