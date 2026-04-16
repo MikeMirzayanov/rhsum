@@ -30,8 +30,8 @@ def main() -> int:
         write_tree(left_root, with_empty_dir=False)
         write_tree(right_root, with_empty_dir=True)
 
-        left_hash = run_rhsum(["-R", left_root])
-        right_hash = run_rhsum(["-R", right_root])
+        left_hash = run_rhsum([left_root])
+        right_hash = run_rhsum([right_root])
 
         if left_hash == right_hash:
             raise SystemExit(

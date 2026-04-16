@@ -20,7 +20,7 @@ def main() -> int:
         os.symlink(root, nested / "loop")
 
         completed = subprocess.run(
-            [str(rhsum_bin()), "-R", "-L", str(root)],
+            [str(rhsum_bin()), "-L", str(root)],
             capture_output=True,
             text=True,
             check=False,

@@ -31,9 +31,9 @@ def main() -> int:
         (expanded_root / "local" / "root.txt").write_bytes(b"local-root\n")
         shutil.copytree(external_root, expanded_root / "linked")
 
-        no_follow_hash = run_rhsum(["-R", symlink_root])
-        follow_hash = run_rhsum(["-R", "-L", symlink_root])
-        expanded_hash = run_rhsum(["-R", expanded_root])
+        no_follow_hash = run_rhsum([symlink_root])
+        follow_hash = run_rhsum(["-L", symlink_root])
+        expanded_hash = run_rhsum([expanded_root])
 
         if no_follow_hash == follow_hash:
             raise SystemExit("hash should change when -L starts traversing a symlinked directory")

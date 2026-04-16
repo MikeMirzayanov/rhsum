@@ -148,7 +148,6 @@ bool classify_entry(
 bool collect_directory_entries(
     const fs::path& root_path,
     const fs::path& dir_path,
-    bool recursive,
     bool follow_symlinks,
     vector<EntryInfo>* entries,
     unordered_set<string>* active_dirs,
@@ -207,8 +206,8 @@ bool collect_directory_entries(
             is_other
         });
 
-        if (recursive && is_dir) {
-            if (!collect_directory_entries(root_path, path, recursive, follow_symlinks, entries, active_dirs, error)) {
+        if (is_dir) {
+            if (!collect_directory_entries(root_path, path, follow_symlinks, entries, active_dirs, error)) {
                 leave_directory();
                 return false;
             }
@@ -492,7 +491,6 @@ void print_help(const char* prog_name) {
     cerr << "Usage: " << prog_name << " [options] <file|dir>\n\n";
     cerr << "Options:\n";
     cerr << "  -T, --threads <N>   Number of threads\n";
-    cerr << "  -R, --recursive     Recursive directory processing\n";
     cerr << "  -L, --follow-symlinks\n";
     cerr << "                      Follow symbolic links\n";
     cerr << "  -v                  Verbose mode\n";
@@ -541,7 +539,6 @@ int main(int argc, char* argv[]) {
     int num_threads = max(1u, thread::hardware_concurrency());
     bool threads_explicitly_set = false;
     bool verbose = false;
-    bool recursive = false;
     bool follow_symlinks = false;
     bool end_of_options = false;
     string input_path;
@@ -567,7 +564,6 @@ int main(int argc, char* argv[]) {
             }
             threads_explicitly_set = true;
         }
-        else if (!end_of_options && (arg == "-R" || arg == "--recursive")) recursive = true;
         else if (!end_of_options && (arg == "-L" || arg == "--follow-symlinks")) follow_symlinks = true;
         else if (!end_of_options && arg == "-v") verbose = true;
         else if (!end_of_options && arg == "--help") { print_help(argv[0]); return 0; }
@@ -622,7 +618,7 @@ int main(int argc, char* argv[]) {
     if (input_is_directory) {
         string collect_error;
         unordered_set<string> active_dirs;
-        if (!collect_directory_entries(input_path, input_path, recursive, follow_symlinks, &entries, &active_dirs, &collect_error)) {
+        if (!collect_directory_entries(input_path, input_path, follow_symlinks, &entries, &active_dirs, &collect_error)) {
             cerr << "Error: " << collect_error << "\n";
             return 1;
         }

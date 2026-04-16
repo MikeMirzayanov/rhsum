@@ -76,8 +76,8 @@ def can_follow_directory_symlinks() -> bool:
             return False
 
         try:
-            no_follow_hash = run_rhsum(["-R", root], cwd=REPO_ROOT)
-            follow_hash = run_rhsum(["-R", "-L", root], cwd=REPO_ROOT)
+            no_follow_hash = run_rhsum([root], cwd=REPO_ROOT)
+            follow_hash = run_rhsum(["-L", root], cwd=REPO_ROOT)
         except Exception:
             return False
 

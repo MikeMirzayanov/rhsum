@@ -34,7 +34,7 @@ def main() -> int:
         os.chmod(blocked, 0)
         try:
             completed = subprocess.run(
-                [str(rhsum_bin()), "-R", str(root)],
+                [str(rhsum_bin()), str(root)],
                 capture_output=True,
                 text=True,
                 check=False,

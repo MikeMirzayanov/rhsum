@@ -32,8 +32,8 @@ def main() -> int:
         populate_tree(left_root, "linked", external_root)
         populate_tree(right_root, "alias", external_root)
 
-        left_hash = run_rhsum(["-R", "-L", left_root])
-        right_hash = run_rhsum(["-R", "-L", right_root])
+        left_hash = run_rhsum(["-L", left_root])
+        right_hash = run_rhsum(["-L", right_root])
 
         if left_hash == right_hash:
             raise SystemExit(

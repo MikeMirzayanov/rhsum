@@ -157,7 +157,6 @@ python3 scripts/run_tests.py --valgrind
 ### Options
 
 - `-T, --threads <N>`: number of worker threads
-- `-R, --recursive`: recursively process directories
 - `-L, --follow-symlinks`: follow symbolic links
 - `-v`: print execution statistics to stderr
 - `--help`: show usage help
@@ -166,15 +165,15 @@ python3 scripts/run_tests.py --valgrind
 
 ```bash
 ./rhsum rhsum.cpp
-./rhsum -R .
-./rhsum -R -T 8 -v .
+./rhsum .
+./rhsum -T 8 -v .
 ```
 
 ## Notes
 
 - Input paths are sorted lexicographically before composition to keep output deterministic.
 - If the input is a single file, `rhsum` hashes only the file bytes.
-- If the input is a directory, `rhsum` hashes relative paths from the traversal root for both files and directories, plus file contents.
+- If the input is a directory, `rhsum` always traverses it recursively and hashes relative paths from the traversal root for both files and directories, plus file contents.
 - Filesystem entities that are neither regular files nor directories contribute only their relative names and type markers, not any payload bytes.
 - Empty directories therefore affect the resulting hash.
 - Symlink and FIFO tests auto-skip on platforms where those primitives are unavailable or restricted.

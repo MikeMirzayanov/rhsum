@@ -31,8 +31,8 @@ def main() -> int:
         left_fifo = build_tree(left_root, "pipe-a")
         build_tree(right_root, "pipe-b")
 
-        left_hash = run_rhsum(["-R", left_root])
-        right_hash = run_rhsum(["-R", right_root])
+        left_hash = run_rhsum([left_root])
+        right_hash = run_rhsum([right_root])
         if left_hash == right_hash:
             raise SystemExit(
                 "hash should change when only the name of a non-file special entry changes"
@@ -54,7 +54,7 @@ def main() -> int:
         )
         try:
             time.sleep(0.1)
-            left_hash_with_writer = run_rhsum(["-R", left_root])
+            left_hash_with_writer = run_rhsum([left_root])
         finally:
             writer.wait(timeout=5)
 
