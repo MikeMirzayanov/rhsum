@@ -73,6 +73,42 @@ User-only install from the same script:
 curl -fsSL https://raw.githubusercontent.com/MikeMirzayanov/rhsum/main/install.sh | bash -s -- --user
 ```
 
+Remove the Unix installation:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MikeMirzayanov/rhsum/main/uninstall.sh | sudo bash
+```
+
+User-only Unix uninstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MikeMirzayanov/rhsum/main/uninstall.sh | bash -s -- --user
+```
+
+Windows PowerShell install:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/MikeMirzayanov/rhsum/main/install.ps1))) -User
+```
+
+Windows system-wide install from an elevated PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/MikeMirzayanov/rhsum/main/install.ps1))) -System
+```
+
+Windows PowerShell uninstall:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/MikeMirzayanov/rhsum/main/uninstall.ps1))) -User
+```
+
+Windows system-wide uninstall from an elevated PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/MikeMirzayanov/rhsum/main/uninstall.ps1))) -System
+```
+
 Install system-wide for all users:
 
 ```bash
