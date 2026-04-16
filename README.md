@@ -16,15 +16,24 @@ g++ -O3 -std=c++20 -march=native -pthread rhsum.cpp -o rhsum
 ├── .gitignore
 ├── Makefile
 ├── README.md
+├── install.ps1
+├── install.sh
 ├── rhsum.cpp
 ├── scripts/build.py
 ├── scripts/run_tests.py
 ├── tests/test_constant_1mb_42.py
 ├── tests/test_directory_tree.py
-├── tests/testlib.py
+├── tests/test_follow_symlink_cycle.py
 ├── tests/test_follow_symlink_name.py
 ├── tests/test_follow_symlinks.py
-└── tests/test_special_name_only.py
+├── tests/test_invalid_cli_args.py
+├── tests/test_invalid_threads_arg.py
+├── tests/test_permission_denied.py
+├── tests/test_single_symlink_input.py
+├── tests/test_special_name_only.py
+├── tests/testlib.py
+├── uninstall.ps1
+└── uninstall.sh
 ```
 
 ## Requirements
