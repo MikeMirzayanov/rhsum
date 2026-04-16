@@ -49,25 +49,15 @@ u64 compute_hash_raw(const uint8_t* data, size_t length) {
     u64 h[K] = {0};
     u64 p_pow = 1;
     const u64 P_K = power(P, K);
+    u64 p_small[K];
+    p_small[0] = 1;
+    for (int j = 1; j < K; ++j) p_small[j] = p_small[j-1] * P;
 
     size_t i = 0;
     for (; i + K <= length; i += K) {
-        const u64 p0 = p_pow;
-        const u64 p1 = p0 * P;
-        const u64 p2 = p1 * P;
-        const u64 p3 = p2 * P;
-        const u64 p4 = p3 * P;
-        const u64 p5 = p4 * P;
-        const u64 p6 = p5 * P;
-        const u64 p7 = p6 * P;
-        h[0] += (u64)data[i + 0] * p0;
-        h[1] += (u64)data[i + 1] * p1;
-        h[2] += (u64)data[i + 2] * p2;
-        h[3] += (u64)data[i + 3] * p3;
-        h[4] += (u64)data[i + 4] * p4;
-        h[5] += (u64)data[i + 5] * p5;
-        h[6] += (u64)data[i + 6] * p6;
-        h[7] += (u64)data[i + 7] * p7;
+        for (int j = 0; j < K; ++j) {
+            h[j] += (u64)data[i + j] * (p_pow * p_small[j]);
+        }
         p_pow *= P_K;
     }
     for (; i < length; ++i) {
