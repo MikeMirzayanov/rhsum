@@ -251,6 +251,7 @@ u64 compute_hash_range_stream(const string& path, size_t offset, size_t length, 
     if (!file) return 0;
 
     vector<uint8_t> buffer(min(STREAM_BUFFER_SIZE, length));
+    const u64 full_block_power = power(P, buffer.size());
     u64 total_hash = 0;
     u64 range_offset_power = 1;
     size_t remaining = length;
@@ -262,7 +263,7 @@ u64 compute_hash_range_stream(const string& path, size_t offset, size_t length, 
         if (bytes_read == 0) break;
 
         total_hash += compute_hash_raw(buffer.data(), bytes_read) * range_offset_power;
-        range_offset_power *= power(P, bytes_read);
+        range_offset_power *= (bytes_read == buffer.size()) ? full_block_power : power(P, bytes_read);
         remaining -= bytes_read;
 
         if (bytes_read < to_read) break;
